@@ -27,18 +27,18 @@ mod methods {
 
 /// The lotus client that provides the basic Lotus Node API abstraction.
 /// Only basic functions are provided.
-pub struct LotusClient<Inner> {
-    inner: Inner,
+pub struct LotusClient<T: JsonRpcClient> {
+    client: T,
 }
 
-impl<Inner> LotusClient<Inner> {
-    pub fn new(inner: Inner) -> Self {
-        Self { inner }
+impl<T: JsonRpcClient> LotusClient<T> {
+    pub fn new(client: T) -> Self {
+        Self { client }
     }
 }
 
 #[async_trait]
-impl<Inner: JsonRpcClient + Send + Sync> LotusApi for LotusClient<Inner> {
+impl<T: JsonRpcClient + Send + Sync> LotusApi for LotusClient<T> {
     async fn mpool_push_message(&self, msg: MpoolPushMessage) -> Result<MpoolPushMessageInner> {
         let from = if let Some(f) = msg.from {
             f
@@ -83,7 +83,7 @@ impl<Inner: JsonRpcClient + Send + Sync> LotusApi for LotusClient<Inner> {
         ]);
 
         let r = self
-            .inner
+            .client
             .request::<MpoolPushMessageResponse>(methods::MPOOL_PUSH_MESSAGE, to_send)
             .await?;
         log::debug!("received mpool_push_message response: {r:?}");
@@ -96,7 +96,7 @@ impl<Inner: JsonRpcClient + Send + Sync> LotusApi for LotusClient<Inner> {
         let to_send = json!([CIDMap::from(cid), nonce]);
 
         let r = self
-            .inner
+            .client
             .request::<StateWaitMsgResponse>(methods::STATE_WAIT_MSG, to_send)
             .await?;
         log::debug!("received state_wait_msg response: {r:?}");
@@ -106,7 +106,7 @@ impl<Inner: JsonRpcClient + Send + Sync> LotusApi for LotusClient<Inner> {
     async fn wallet_default(&self) -> Result<Address> {
         // refer to: https://lotus.filecoin.io/reference/lotus/wallet/#walletdefaultaddress
         let r = self
-            .inner
+            .client
             .request::<String>(methods::WALLET_DEFAULT_ADDRESS, json!({}))
             .await?;
         log::debug!("received wallet_default response: {r:?}");
@@ -118,7 +118,7 @@ impl<Inner: JsonRpcClient + Send + Sync> LotusApi for LotusClient<Inner> {
     async fn wallet_list(&self) -> Result<WalletListResponse> {
         // refer to: https://lotus.filecoin.io/reference/lotus/wallet/#walletlist
         let r = self
-            .inner
+            .client
             .request::<WalletListResponse>(methods::WALLET_LIST, json!({}))
             .await?;
         log::debug!("received wallet_list response: {r:?}");
@@ -129,7 +129,7 @@ impl<Inner: JsonRpcClient + Send + Sync> LotusApi for LotusClient<Inner> {
         let s = key_type.as_ref();
         // refer to: https://lotus.filecoin.io/reference/lotus/wallet/#walletnew
         let r = self
-            .inner
+            .client
             .request::<String>(methods::WALLET_NEW, json!([s]))
             .await?;
         log::debug!("received wallet_new response: {r:?}");
@@ -143,7 +143,7 @@ impl<Inner: JsonRpcClient + Send + Sync> LotusApi for LotusClient<Inner> {
     ) -> Result<ReadStateResponse<State>> {
         // refer to: https://lotus.filecoin.io/reference/lotus/state/#statereadstate
         let r = self
-            .inner
+            .client
             .request::<ReadStateResponse<State>>(
                 methods::STATE_READ_STATE,
                 json!([address.to_string(), [CIDMap::from(tipset)]]),
