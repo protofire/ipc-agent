@@ -102,7 +102,7 @@ async fn manage_subnet(child: Subnet, parent: Subnet) -> Result<()> {
             assert_eq!(child_head.cids.len(), 1); // Again, check key assumption
             let child_tip_set = Cid::try_from(child_head.cids.first().unwrap().clone())?;
             for account in child.accounts.iter() {
-                if validator_set.contains(&account) {
+                if validator_set.contains(account) {
                     submit_checkpoint(child_tip_set, epoch, account, &child, &parent).await?;
                 }
             }
@@ -144,7 +144,7 @@ async fn submit_checkpoint(
     // The checkpoint is constructed. Now we call the `submit_checkpoint` method on the subnet actor
     // of the child subnet that is deployed on the parent subnet.
     let to = child_subnet.id.subnet_actor();
-    let from = account.clone();
+    let from = *account;
     let message = MpoolPushMessage::new(
         to,
         from,
