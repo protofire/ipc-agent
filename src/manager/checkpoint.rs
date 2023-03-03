@@ -54,11 +54,6 @@ fn subnets_to_manage(subnets: HashMap<String, Subnet>) -> Vec<(Subnet, Subnet)> 
 
 /// Monitors a subnet `child` for checkpoint blocks. It emits an event for every new checkpoint block.
 async fn manage_subnet(child: Subnet, parent: Subnet) -> Result<()> {
-    println!(
-        "MONITOR SUBNET for subnet {} with parent {}",
-        child.id, parent.id
-    );
-
     let child_client = LotusJsonRPCClient::from_subnet(&child);
     let parent_client = LotusJsonRPCClient::from_subnet(&parent);
 
