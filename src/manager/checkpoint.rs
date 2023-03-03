@@ -94,7 +94,6 @@ async fn manage_subnet(child: Subnet, parent: Subnet) -> Result<()> {
                 .await?;
             let validator_set: HashSet<Address, RandomState> =
                 HashSet::from_iter(subnet_actor_state.validator_set.iter().map(|v| v.addr));
-                //HashSet::from_iter(subnet_actor_state.validator_set.iter().map(|v| v.addr));
 
             // Now, for each account defined in the `child` subnet that is in the validator set, we
             // submit a checkpoint on its behalf.
