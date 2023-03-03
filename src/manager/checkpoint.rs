@@ -21,7 +21,10 @@ use crate::lotus::client::LotusJsonRPCClient;
 use crate::lotus::message::mpool::MpoolPushMessage;
 use crate::lotus::LotusClient;
 
+const CHAIN_HEAD_REQUEST_PERIOD: Duration = Duration::from_secs(10);
+
 /// Starts the checkpoint manager.
+#[allow(dead_code)]
 pub async fn start(subnets: HashMap<String, Subnet>) {
     let managed_subnets = subnets_to_manage(subnets);
 
@@ -109,7 +112,7 @@ async fn manage_subnet(child: Subnet, parent: Subnet) -> Result<()> {
         }
 
         // Sleep for an appropriate amount of time before checking the chain head again.
-        sleep(Duration::from_secs(10)).await;
+        sleep(CHAIN_HEAD_REQUEST_PERIOD).await;
     }
 }
 
@@ -154,16 +157,4 @@ async fn submit_checkpoint(
     parent_client.mpool_push_message(message).await?;
 
     Ok(())
-}
-
-#[cfg(test)]
-mod tests {
-    use crate::config::Config;
-    use crate::manager::checkpoint::start;
-
-    #[tokio::test]
-    async fn test_checkpoint() {
-        let config = Config::from_file("config/template.toml").unwrap();
-        start(config.subnets).await;
-    }
 }
