@@ -2330,6 +2330,7 @@ dependencies = [
  "log",
  "num-traits",
  "once_cell",
+ "primitives",
  "reqwest",
  "serde",
  "serde_json",

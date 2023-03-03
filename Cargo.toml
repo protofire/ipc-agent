@@ -47,6 +47,7 @@ ipc-sdk = { workspace = true }
 ipc-subnet-actor = { workspace = true }
 ipc-gateway = { workspace = true }
 fvm_ipld_encoding = { workspace = true }
+primitives = { workspace = true }
 
 [workspace.dependencies]
 anyhow = "1.0"
@@ -61,3 +62,4 @@ ipc-sdk = { git = "https://github.com/consensus-shipyard/ipc-actors.git" }
 ipc-subnet-actor = { git = "https://github.com/consensus-shipyard/ipc-actors.git", features = [] }
 ipc-gateway = { git = "https://github.com/consensus-shipyard/ipc-actors.git", features = [] }
 libipld = { version = "0.14", default-features = false, features = ["dag-cbor"] }
+primitives = { git = "https://github.com/consensus-shipyard/fvm-utils"}
