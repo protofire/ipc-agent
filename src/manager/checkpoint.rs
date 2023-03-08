@@ -2,37 +2,68 @@
 // SPDX-License-Identifier: MIT
 use std::collections::hash_map::RandomState;
 use std::collections::{HashMap, HashSet};
+use std::sync::Arc;
 use std::time::Duration;
 
-use anyhow::Result;
+use anyhow::{anyhow, Result};
 use cid::Cid;
 use fil_actors_runtime::cbor;
-use futures_util::future::join_all;
+use futures_util::stream::FuturesUnordered;
+use futures_util::StreamExt;
 use fvm_shared::address::Address;
 use fvm_shared::clock::ChainEpoch;
 use fvm_shared::MethodNum;
 use ipc_gateway::Checkpoint;
 use ipc_sdk::subnet_id::SubnetID;
 use primitives::TCid;
+use tokio::sync::Notify;
 use tokio::time::sleep;
+use tokio::{join, select};
 
-use crate::config::Subnet;
+use crate::config::{ReloadableConfig, Subnet};
 use crate::lotus::client::LotusJsonRPCClient;
 use crate::lotus::message::mpool::MpoolPushMessage;
 use crate::lotus::LotusClient;
 
+/// The frequency at which to check a new chain head.
 const CHAIN_HEAD_REQUEST_PERIOD: Duration = Duration::from_secs(10);
 
-/// Starts the checkpoint manager.
+/// Starts the checkpoint manager, which actively monitors subnets and submits checkpoints.
+/// For each (account, subnet) that exists in the config, the subnet is monitored and checkpoints
+/// are submitted at the appropriate epochs. This function takes a `ReloadableConfig` and ensures,
+/// at all times, that the subnets under management are those in the latest config.
 #[allow(dead_code)]
-pub async fn start(subnets: HashMap<String, Subnet>) {
-    let managed_subnets = subnets_to_manage(subnets);
+pub async fn start(reloadable_config: &ReloadableConfig) -> Result<()> {
+    // Each event in this channel is notification of a new config.
+    let mut config_chan = reloadable_config.new_subscriber();
 
-    let mut futures = Vec::new();
-    for (child, parent) in managed_subnets {
-        futures.push(manage_subnet(child, parent));
+    loop {
+        let config = reloadable_config.get_config(); // Load the latest config.
+        let stop_notify = Arc::new(Notify::new());
+        let managed_subnets = subnets_to_manage(&config.subnets);
+
+        let manage_subnet_futures = FuturesUnordered::new();
+        for (child, parent) in managed_subnets {
+            //manage_subnet_futures.push(async { 1_i32 });
+            manage_subnet_futures.push(manage_subnet((child, parent), stop_notify.clone()));
+        }
+
+        // If we receive a new config, we stop all `manage_subnet` futures and continue to the next
+        // iteration where the new config will be loaded.
+        let (_, results): (Result<()>, _) = join!(
+            async {
+                let r = config_chan
+                    .recv()
+                    .await
+                    .map_err(|_| anyhow!("error reading from config channel"));
+                stop_notify.notify_waiters();
+                r?;
+                Ok(())
+            },
+            manage_subnet_futures.collect::<Vec<Result<()>>>(),
+        );
+        results.into_iter().collect::<Result<Vec<_>>>()?;
     }
-    join_all(futures).await;
 }
 
 /// This function takes a `HashMap<String, Subnet>` and returns a `Vec` of tuples of the form
@@ -40,7 +71,7 @@ pub async fn start(subnets: HashMap<String, Subnet>) {
 /// manage checkpoint for. This means that for each `child_subnet` there exists at least one account
 /// for which we need to submit checkpoints on behalf of to `parent_subnet`, which must also be
 /// present in the map.
-fn subnets_to_manage(subnets: HashMap<String, Subnet>) -> Vec<(Subnet, Subnet)> {
+fn subnets_to_manage(subnets: &HashMap<String, Subnet>) -> Vec<(Subnet, Subnet)> {
     // First, we remap subnets by SubnetID.
     let subnets_by_id: HashMap<SubnetID, Subnet> = subnets
         .values()
@@ -58,13 +89,13 @@ fn subnets_to_manage(subnets: HashMap<String, Subnet>) -> Vec<(Subnet, Subnet)> 
 }
 
 /// Monitors a subnet `child` for checkpoint blocks. It emits an event for every new checkpoint block.
-async fn manage_subnet(child: Subnet, parent: Subnet) -> Result<()> {
+async fn manage_subnet((child, parent): (Subnet, Subnet), stop_notify: Arc<Notify>) -> Result<()> {
     let child_client = LotusJsonRPCClient::from_subnet(&child);
     let parent_client = LotusJsonRPCClient::from_subnet(&parent);
 
     // Read the parent's chain head and obtain the tip set CID.
     let parent_head = parent_client.chain_head().await?;
-    let cid_map = parent_head.cids.last().unwrap().clone();
+    let cid_map = parent_head.cids.first().unwrap().clone();
     let parent_tip_set = Cid::try_from(cid_map)?;
 
     // Extract the checkpoint period from the state of the subnet actor in the parent.
@@ -112,8 +143,12 @@ async fn manage_subnet(child: Subnet, parent: Subnet) -> Result<()> {
             }
         }
 
-        // Sleep for an appropriate amount of time before checking the chain head again.
-        sleep(CHAIN_HEAD_REQUEST_PERIOD).await;
+        // Sleep for an appropriate amount of time before checking the chain head again or return
+        // if a stop notification is received.
+        select! {
+            _ = sleep(CHAIN_HEAD_REQUEST_PERIOD) => {}
+            _ = stop_notify.notified() => { return Ok(()); }
+        }
     }
 }
 
