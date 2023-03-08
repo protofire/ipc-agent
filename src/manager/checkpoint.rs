@@ -50,7 +50,7 @@ pub async fn start(reloadable_config: &ReloadableConfig) -> Result<()> {
 
         // If we receive a new config, we stop all `manage_subnet` futures and continue to the next
         // iteration where the new config will be loaded.
-        let (_, results): (Result<()>, _) = join!(
+        let (_, results) = join!(
             async {
                 let r = config_chan
                     .recv()
