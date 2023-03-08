@@ -90,6 +90,7 @@ async fn manage_subnet(child: Subnet, parent: Subnet) -> Result<()> {
             let parent_head = parent_client.chain_head().await?;
             // A key assumption we make now is that each block has exactly one tip set. We panic
             // if this is not the case as it violates our assumption.
+            // TODO: update this logic once the assumption changes (i.e., mainnet)
             assert_eq!(parent_head.cids.len(), 1);
             let cid_map = parent_head.cids.first().unwrap().clone();
             let parent_tip_set = Cid::try_from(cid_map)?;
