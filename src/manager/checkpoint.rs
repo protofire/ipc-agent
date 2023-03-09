@@ -1,14 +1,17 @@
+use std::cell::Cell;
+use std::collections::{HashMap, HashSet};
 // Copyright 2022-2023 Protocol Labs
 // SPDX-License-Identifier: MIT
 use std::collections::hash_map::RandomState;
-use std::collections::{HashMap, HashSet};
 use std::sync::Arc;
 use std::time::Duration;
 
+use anyhow::__private::kind::TraitKind;
 use anyhow::{anyhow, Result};
 use cid::Cid;
 use fil_actors_runtime::cbor;
 use futures_util::stream::FuturesUnordered;
+use futures_util::task::SpawnExt;
 use futures_util::StreamExt;
 use fvm_shared::address::Address;
 use fvm_shared::clock::ChainEpoch;
@@ -16,9 +19,13 @@ use fvm_shared::MethodNum;
 use ipc_gateway::Checkpoint;
 use ipc_sdk::subnet_id::SubnetID;
 use primitives::TCid;
-use tokio::sync::Notify;
+use tokio::sync::mpsc::error::TryRecvError;
+use tokio::sync::oneshot::Receiver;
+use tokio::sync::{mpsc, oneshot, Notify};
+use tokio::task::JoinHandle;
 use tokio::time::sleep;
 use tokio::{join, select};
+use tokio_graceful_shutdown::SubsystemHandle;
 
 use crate::config::{ReloadableConfig, Subnet};
 use crate::lotus::client::LotusJsonRPCClient;
@@ -27,6 +34,56 @@ use crate::lotus::LotusClient;
 
 /// The frequency at which to check a new chain head.
 const CHAIN_HEAD_REQUEST_PERIOD: Duration = Duration::from_secs(10);
+
+struct CheckpointSubsystem {
+    config: ReloadableConfig,
+}
+
+impl CheckpointSubsystem {
+    #[allow(dead_code)]
+    fn new(config: ReloadableConfig) -> Self {
+        Self { config }
+    }
+
+    #[allow(dead_code)]
+    async fn run(&self, subsys: SubsystemHandle) -> Result<()> {
+        // Each event in this channel is notification of a new config.
+        let mut config_chan = self.config.new_subscriber();
+
+        loop {
+            let config = self.config.get_config(); // Load the latest config.
+            let stop_subnet_managers = Arc::new(Notify::new());
+            let managed_subnets = subnets_to_manage(&config.subnets);
+
+            let manage_subnet_futures = FuturesUnordered::new();
+            for (child, parent) in managed_subnets {
+                manage_subnet_futures
+                    .push(manage_subnet((child, parent), stop_subnet_managers.clone()));
+            }
+
+            // Spawn a task to drive the individual subnet managers
+            let manage_subnets_task =
+                tokio::spawn(manage_subnet_futures.collect::<Vec<Result<()>>>());
+
+            let shutdown = select! {
+                _ = subsys.on_shutdown_requested() => { true },
+                r = config_chan.recv() => {
+                    match r {
+                        Ok(_) => { false },
+                        Err(_) => { true },
+                    }
+                },
+            };
+
+            if shutdown {
+                stop_subnet_managers.notify_waiters();
+                let results = manage_subnets_task.await?;
+                results.into_iter().collect::<Result<Vec<_>>>()?;
+                return anyhow::Ok(());
+            }
+        }
+    }
+}
 
 /// Starts the checkpoint manager, which actively monitors subnets and submits checkpoints.
 /// For each (account, subnet) that exists in the config, the subnet is monitored and checkpoints
