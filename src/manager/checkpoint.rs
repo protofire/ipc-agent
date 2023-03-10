@@ -1,17 +1,14 @@
-use std::cell::Cell;
-use std::collections::{HashMap, HashSet};
 // Copyright 2022-2023 Protocol Labs
 // SPDX-License-Identifier: MIT
+use std::collections::{HashMap, HashSet};
 use std::collections::hash_map::RandomState;
 use std::sync::Arc;
 use std::time::Duration;
 
-use anyhow::__private::kind::TraitKind;
-use anyhow::{anyhow, Result};
+use anyhow::Result;
 use cid::Cid;
 use fil_actors_runtime::cbor;
 use futures_util::stream::FuturesUnordered;
-use futures_util::task::SpawnExt;
 use futures_util::StreamExt;
 use fvm_shared::address::Address;
 use fvm_shared::clock::ChainEpoch;
@@ -19,12 +16,9 @@ use fvm_shared::MethodNum;
 use ipc_gateway::Checkpoint;
 use ipc_sdk::subnet_id::SubnetID;
 use primitives::TCid;
-use tokio::sync::mpsc::error::TryRecvError;
-use tokio::sync::oneshot::Receiver;
-use tokio::sync::{mpsc, oneshot, Notify};
-use tokio::task::JoinHandle;
+use tokio::select;
+use tokio::sync::Notify;
 use tokio::time::sleep;
-use tokio::{join, select};
 use tokio_graceful_shutdown::SubsystemHandle;
 
 use crate::config::{ReloadableConfig, Subnet};
@@ -35,37 +29,47 @@ use crate::lotus::LotusClient;
 /// The frequency at which to check a new chain head.
 const CHAIN_HEAD_REQUEST_PERIOD: Duration = Duration::from_secs(10);
 
+/// The `CheckpointSubsystem`. When run, it actively monitors subnets and submits checkpoints.
 struct CheckpointSubsystem {
+    /// The subsystem uses a `ReloadableConfig` to ensure that, at all, times, the subnets under
+    /// management are those in the latest version of t he config.
     config: ReloadableConfig,
 }
 
 impl CheckpointSubsystem {
+    /// Creates a new `CheckpointSubsystem` with a configuration `config`.
     #[allow(dead_code)]
     fn new(config: ReloadableConfig) -> Self {
         Self { config }
     }
 
+    /// Runs the checkpoint subsystem, which actively monitors subnets and submits checkpoints.
+    /// For each (account, subnet) that exists in the config, the subnet is monitored and checkpoints
+    /// are submitted at the appropriate epochs.
     #[allow(dead_code)]
     async fn run(&self, subsys: SubsystemHandle) -> Result<()> {
         // Each event in this channel is notification of a new config.
         let mut config_chan = self.config.new_subscriber();
 
         loop {
-            let config = self.config.get_config(); // Load the latest config.
-            let stop_subnet_managers = Arc::new(Notify::new());
-            let managed_subnets = subnets_to_manage(&config.subnets);
+            // Load the latest config.
+            let config = self.config.get_config();
 
+            // Create a `manage_subnet` future for each (child, parent) subnet pair under management
+            // and collect them in a `FuturesUnordered` set.
             let manage_subnet_futures = FuturesUnordered::new();
-            for (child, parent) in managed_subnets {
+            let stop_subnet_managers = Arc::new(Notify::new());
+            for (child, parent) in subnets_to_manage(&config.subnets) {
                 manage_subnet_futures
                     .push(manage_subnet((child, parent), stop_subnet_managers.clone()));
             }
 
-            // Spawn a task to drive the individual subnet managers
+            // Spawn a task to drive the `manage_subnet` futures.
             let manage_subnets_task =
                 tokio::spawn(manage_subnet_futures.collect::<Vec<Result<()>>>());
 
-            let shutdown = select! {
+            // Watch for shutdown requests and config changes.
+            let is_shutdown = select! {
                 _ = subsys.on_shutdown_requested() => { true },
                 r = config_chan.recv() => {
                     match r {
@@ -75,51 +79,14 @@ impl CheckpointSubsystem {
                 },
             };
 
-            if shutdown {
+            if is_shutdown {
+                // Cleanly stop the `manage_subnet` futures and return.
                 stop_subnet_managers.notify_waiters();
                 let results = manage_subnets_task.await?;
                 results.into_iter().collect::<Result<Vec<_>>>()?;
                 return anyhow::Ok(());
             }
         }
-    }
-}
-
-/// Starts the checkpoint manager, which actively monitors subnets and submits checkpoints.
-/// For each (account, subnet) that exists in the config, the subnet is monitored and checkpoints
-/// are submitted at the appropriate epochs. This function takes a `ReloadableConfig` and ensures,
-/// at all times, that the subnets under management are those in the latest config.
-#[allow(dead_code)]
-pub async fn start(reloadable_config: &ReloadableConfig) -> Result<()> {
-    // Each event in this channel is notification of a new config.
-    let mut config_chan = reloadable_config.new_subscriber();
-
-    loop {
-        let config = reloadable_config.get_config(); // Load the latest config.
-        let stop_notify = Arc::new(Notify::new());
-        let managed_subnets = subnets_to_manage(&config.subnets);
-
-        let manage_subnet_futures = FuturesUnordered::new();
-        for (child, parent) in managed_subnets {
-            //manage_subnet_futures.push(async { 1_i32 });
-            manage_subnet_futures.push(manage_subnet((child, parent), stop_notify.clone()));
-        }
-
-        // If we receive a new config, we stop all `manage_subnet` futures and continue to the next
-        // iteration where the new config will be loaded.
-        let (_, results): (Result<()>, _) = join!(
-            async {
-                let r = config_chan
-                    .recv()
-                    .await
-                    .map_err(|_| anyhow!("error reading from config channel"));
-                stop_notify.notify_waiters();
-                r?;
-                Ok(())
-            },
-            manage_subnet_futures.collect::<Vec<Result<()>>>(),
-        );
-        results.into_iter().collect::<Result<Vec<_>>>()?;
     }
 }
 
@@ -162,8 +129,8 @@ async fn manage_subnet((child, parent): (Subnet, Subnet), stop_notify: Arc<Notif
     let period = state.check_period;
 
     // We should have a way of knowing whether the validator has voted in the current open
-    // checkpoint epoch. For now, we maintain this information in memory and upon a restart only
-    // vote for the next epoch.
+    // checkpoint epoch.
+    // TODO: Hook this up to 
 
     // We can now start looping. In each loop we read the child subnet's chain head and check if
     // it's a checkpoint epoch. If it is, we construct and submit a checkpoint.
