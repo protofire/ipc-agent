@@ -1,7 +1,7 @@
 // Copyright 2022-2023 Protocol Labs
 // SPDX-License-Identifier: MIT
-use std::collections::{HashMap, HashSet};
 use std::collections::hash_map::RandomState;
+use std::collections::{HashMap, HashSet};
 use std::sync::Arc;
 use std::time::Duration;
 
@@ -22,6 +22,7 @@ use tokio::time::sleep;
 use tokio_graceful_shutdown::SubsystemHandle;
 
 use crate::config::{ReloadableConfig, Subnet};
+use crate::jsonrpc::JsonRpcClient;
 use crate::lotus::client::LotusJsonRPCClient;
 use crate::lotus::message::mpool::MpoolPushMessage;
 use crate::lotus::LotusClient;
@@ -130,7 +131,7 @@ async fn manage_subnet((child, parent): (Subnet, Subnet), stop_notify: Arc<Notif
 
     // We should have a way of knowing whether the validator has voted in the current open
     // checkpoint epoch.
-    // TODO: Hook this up to 
+    // TODO: Hook this up to the new IPC methods.
 
     // We can now start looping. In each loop we read the child subnet's chain head and check if
     // it's a checkpoint epoch. If it is, we construct and submit a checkpoint.
@@ -162,7 +163,15 @@ async fn manage_subnet((child, parent): (Subnet, Subnet), stop_notify: Arc<Notif
             let child_tip_set = Cid::try_from(child_head.cids.first().unwrap().clone())?;
             for account in child.accounts.iter() {
                 if validator_set.contains(account) {
-                    submit_checkpoint(child_tip_set, epoch, account, &child, &parent).await?;
+                    submit_checkpoint(
+                        child_tip_set,
+                        epoch,
+                        account,
+                        &child,
+                        &child_client,
+                        &parent_client,
+                    )
+                    .await?;
                 }
             }
         }
@@ -178,23 +187,22 @@ async fn manage_subnet((child, parent): (Subnet, Subnet), stop_notify: Arc<Notif
 
 /// Submits a checkpoint for `epoch` on behalf of `account` to the subnet actor of `child_subnet`
 /// deployed on the parent subnet.
-async fn submit_checkpoint(
+async fn submit_checkpoint<T: JsonRpcClient + Send + Sync>(
     child_tip_set: Cid,
     epoch: ChainEpoch,
     account: &Address,
     child_subnet: &Subnet,
-    parent_subnet: &Subnet,
+    child_client: &LotusJsonRPCClient<T>,
+    parent_client: &LotusJsonRPCClient<T>,
 ) -> Result<()> {
     let mut checkpoint = Checkpoint::new(child_subnet.id.clone(), epoch);
 
     // Get the children checkpoints from the template on the gateway actor of the child subnet.
-    let child_client = LotusJsonRPCClient::from_subnet(child_subnet);
     let template = child_client.ipc_get_checkpoint_template(epoch).await?;
     checkpoint.data.children = template.data.children;
 
     // Get the CID of previous checkpoint of the child subnet from the gateway actor of the parent
     // subnet.
-    let parent_client = LotusJsonRPCClient::from_subnet(parent_subnet);
     let response = parent_client
         .ipc_get_prev_checkpoint_for_child(child_subnet.id.clone())
         .await?;
