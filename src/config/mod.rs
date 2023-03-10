@@ -12,6 +12,7 @@ pub mod subnet;
 
 #[cfg(test)]
 mod tests;
+
 use std::collections::HashMap;
 use std::fs;
 use std::path::Path;
