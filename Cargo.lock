@@ -5493,7 +5493,7 @@ dependencies = [
  "pin-project-lite",
  "thiserror",
  "tokio",
- "tokio-util",
+ "tokio-util 0.7.7",
 ]
 
 [[package]]

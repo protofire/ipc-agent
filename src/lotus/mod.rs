@@ -11,6 +11,7 @@ use fvm_shared::address::Address;
 use fvm_shared::clock::ChainEpoch;
 use ipc_gateway::Checkpoint;
 use ipc_sdk::subnet_id::SubnetID;
+use ipc_subnet_actor::ValidatorSet;
 use serde::de::DeserializeOwned;
 
 use message::chain::ChainHeadResponse;
@@ -92,4 +93,19 @@ pub trait LotusClient {
         &self,
         tip_set: Cid,
     ) -> Result<IPCReadSubnetActorStateResponse>;
+
+    /// Returns the checkpoint for `epoch` if a checkpoint has been committed for that epoch.
+    /// Otherwise, it returns `None`.
+    async fn ipc_get_checkpoint(
+        &self,
+        child_subnet_id: SubnetID,
+        epoch: ChainEpoch,
+    ) -> Result<Option<Checkpoint>>;
+
+    /// Returns the votes for a checkpoint.
+    async fn ipc_get_votes_for_checkpoint(
+        &self,
+        child_subnet_id: SubnetID,
+        cid: Cid,
+    ) -> Result<Vec<String>>;
 }
