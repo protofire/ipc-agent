@@ -1,7 +1,7 @@
 // Copyright 2022-2023 Protocol Labs
 // SPDX-License-Identifier: MIT
-use std::collections::hash_map::RandomState;
 use std::collections::{HashMap, HashSet};
+use std::collections::hash_map::RandomState;
 use std::sync::Arc;
 use std::time::Duration;
 
@@ -33,7 +33,7 @@ const CHAIN_HEAD_REQUEST_PERIOD: Duration = Duration::from_secs(10);
 /// The `CheckpointSubsystem`. When run, it actively monitors subnets and submits checkpoints.
 struct CheckpointSubsystem {
     /// The subsystem uses a `ReloadableConfig` to ensure that, at all, times, the subnets under
-    /// management are those in the latest version of t he config.
+    /// management are those in the latest version of the config.
     config: ReloadableConfig,
 }
 
@@ -154,8 +154,13 @@ async fn manage_subnet((child, parent): (Subnet, Subnet), stop_notify: Arc<Notif
             let subnet_actor_state = parent_client
                 .ipc_read_subnet_actor_state(parent_tip_set)
                 .await?;
-            let validator_set: HashSet<Address, RandomState> =
-                HashSet::from_iter(subnet_actor_state.validator_set.iter().map(|v| v.addr));
+            let validator_set: HashSet<Address, RandomState> = HashSet::from_iter(
+                subnet_actor_state
+                    .validator_set
+                    .validators()
+                    .iter()
+                    .map(|v| v.addr),
+            );
 
             // Now, for each account defined in the `child` subnet that is in the validator set, we
             // submit a checkpoint on its behalf.
@@ -208,9 +213,7 @@ async fn submit_checkpoint<T: JsonRpcClient + Send + Sync>(
         .await?;
     let cid = Cid::try_from(response.cid)?;
     checkpoint.data.prev_check = TCid::from(cid);
-
-    // The "tip_set".
-    checkpoint.data.tip_set = child_tip_set.to_bytes();
+    checkpoint.data.proof = child_tip_set.to_bytes();
 
     // The checkpoint is constructed. Now we call the `submit_checkpoint` method on the subnet actor
     // of the child subnet that is deployed on the parent subnet.

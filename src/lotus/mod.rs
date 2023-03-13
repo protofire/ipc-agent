@@ -11,7 +11,6 @@ use fvm_shared::address::Address;
 use fvm_shared::clock::ChainEpoch;
 use ipc_gateway::Checkpoint;
 use ipc_sdk::subnet_id::SubnetID;
-use ipc_subnet_actor::ValidatorSet;
 use serde::de::DeserializeOwned;
 
 use message::chain::ChainHeadResponse;
