@@ -42,14 +42,6 @@ pub trait SubnetManager {
     /// Sends a signal to kill a subnet
     async fn kill_subnet(&self, subnet: SubnetID, from: Address) -> Result<()>;
 
-    /// Submits a checkpoint for a subnet from a wallet address.
-    async fn submit_checkpoint(
-        &self,
-        subnet: SubnetID,
-        from: Address,
-        ch: Checkpoint,
-    ) -> Result<()>;
-
     /// Lists all the registered children in a gateway.
     async fn list_child_subnets(
         &self,

@@ -11,7 +11,7 @@ use fil_actors_runtime::{builtin::singletons::INIT_ACTOR_ADDR, cbor};
 use fvm_shared::clock::ChainEpoch;
 use fvm_shared::METHOD_SEND;
 use fvm_shared::{address::Address, econ::TokenAmount, MethodNum};
-use ipc_gateway::{Checkpoint, PropagateParams, WhitelistPropagatorParams};
+use ipc_gateway::{BottomUpCheckpoint, PropagateParams, WhitelistPropagatorParams};
 use ipc_sdk::subnet_id::SubnetID;
 use ipc_subnet_actor::{types::MANIFEST_ID, ConstructParams, JoinParams};
 
@@ -123,15 +123,6 @@ impl<T: JsonRpcClient + Send + Sync> SubnetManager for LotusSubnetManager<T> {
         log::info!("left subnet: {subnet:}");
 
         Ok(())
-    }
-
-    async fn submit_checkpoint(
-        &self,
-        _subnet: SubnetID,
-        _from: Address,
-        _ch: Checkpoint,
-    ) -> Result<()> {
-        panic!("not implemented")
     }
 
     async fn list_child_subnets(

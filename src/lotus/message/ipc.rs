@@ -92,7 +92,7 @@ pub struct Validator {
 /// here because the Lotus API json serializes and the cbor tuple deserializer is not
 /// able to pick it up automatically
 #[derive(Deserialize, Serialize, Debug)]
-pub struct CheckpointResponse {
+pub struct BottomUpCheckpointResponse {
     #[serde(rename(deserialize = "Data"))]
     pub data: CheckpointData,
     #[serde(rename(deserialize = "Sig"))]
@@ -119,17 +119,33 @@ pub struct CheckpointData {
 }
 
 #[derive(PartialEq, Eq, Clone, Debug, Default, Deserialize, Serialize)]
-pub struct CrossMsgMetaWrapper {
-    #[serde(rename(deserialize = "MsgsCid"))]
-    pub msgs_cid: Option<CIDMap>,
-    #[serde(rename(deserialize = "Nonce"))]
-    pub nonce: u64,
-    #[serde(rename(deserialize = "Value"))]
-    #[serde(deserialize_with = "deserialize_token_amount_from_str")]
-    pub value: TokenAmount,
+pub struct BatchCrossMsgWrapper {
+    #[serde(rename(deserialize = "CrossMsgs"))]
+    pub cross_msgs: Option<Vec<CrossMsgsWrapper>>,
     #[serde(rename(deserialize = "Fee"))]
     #[serde(deserialize_with = "deserialize_token_amount_from_str")]
     pub fee: TokenAmount,
+}
+
+#[derive(PartialEq, Eq, Clone, Debug, Default, Deserialize, Serialize)]
+#[serde(rename_all = "PascalCase")]
+pub struct CrossMsgsWrapper {
+    pub msg: StorableMsgWrapper,
+    pub wrapped: bool,
+}
+
+#[derive(PartialEq, Eq, Clone, Debug, Default, Deserialize, Serialize)]
+#[serde(rename_all = "PascalCase")]
+pub struct StorableMsgsWrapper {
+    // TODO: @will,IPCAddress is currently serialized by default as a tuple,
+    // we need to implement its map counterpart so it can be deserialized
+    // using a map from Lotus.
+    pub from: IPCAddress,
+    pub to: IPCAddress,
+    pub method: MethodNum,
+    pub params: RawBytes,
+    pub value: TokenAmount,
+    pub nonce: u64,
 }
 
 #[derive(Deserialize, Serialize, Debug)]
