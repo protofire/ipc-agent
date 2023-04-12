@@ -21,7 +21,7 @@ use crate::lotus::LotusClient;
 // Prototype function for submitting topdown messages. This function is supposed to be called each
 // Nth epoch of a parent subnet. It reads the topdown messages from the parent subnet and submits
 // them to the child subnet.
-async fn submit_topdown_msgs<T: JsonRpcClient + Send + Sync>(
+async fn submit_topdown_checkpoint<T: JsonRpcClient + Send + Sync>(
     parent_epoch: ChainEpoch,
     account: &Address,
     child_subnet: SubnetID,
@@ -39,19 +39,19 @@ async fn submit_topdown_msgs<T: JsonRpcClient + Send + Sync>(
 
     // Then, we read from the parent subnet the topdown messages with nonce greater than or equal
     // to the nonce we just obtained.
-    let topdown_msgs = parent_client
+    let top_down_msgs = parent_client
         .ipc_get_topdown_msgs(child_subnet, nonce)
         .await?;
 
     // Finally, we submit the topdown messages to the child subnet.
     let to = Address::from_str(GATEWAY_ACTOR_ADDRESS)?;
     let from = *account;
-    let cron_checkpoint = TopDownCheckpoint::new(parent_epoch, topdown_msgs);
+    let topdown_checkpoint = TopDownCheckpoint { epoch: parent_epoch, top_down_msgs };
     let message = MpoolPushMessage::new(
         to,
         from,
         ipc_gateway::Method::SubmitTopDownCheckpoint as MethodNum,
-        cbor::serialize(&cron_checkpoint, "cron_checkpoint")?.to_vec(),
+        cbor::serialize(&topdown_checkpoint, "topdown_checkpoint")?.to_vec(),
     );
     parent_client.mpool_push_message(message).await?;
 
