@@ -1,16 +1,22 @@
+// Copyright 2022-2023 Protocol Labs
+// SPDX-License-Identifier: MIT
+
 use std::str::FromStr;
-use fvm_shared::address::Address;
-use fvm_shared::clock::ChainEpoch;
-use ipc_gateway::TopDownCheckpoint;
-use ipc_sdk::subnet_id::SubnetID;
-use crate::jsonrpc::JsonRpcClient;
-use crate::lotus::client::LotusJsonRPCClient;
+
 use anyhow::Result;
 use cid::Cid;
 use fil_actors_runtime::cbor;
+use fvm_shared::address::Address;
+use fvm_shared::clock::ChainEpoch;
 use fvm_shared::MethodNum;
-use crate::lotus::LotusClient;
+use ipc_gateway::TopDownCheckpoint;
+use ipc_sdk::subnet_id::SubnetID;
+
+use crate::constants::GATEWAY_ACTOR_ADDRESS;
+use crate::jsonrpc::JsonRpcClient;
+use crate::lotus::client::LotusJsonRPCClient;
 use crate::lotus::message::mpool::MpoolPushMessage;
+use crate::lotus::LotusClient;
 
 // Prototype function for submitting topdown messages. This function is supposed to be called each
 // Nth epoch of a parent subnet. It reads the topdown messages from the parent subnet and submits
