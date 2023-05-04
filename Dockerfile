@@ -3,14 +3,9 @@
 # Build stage
 FROM rust:1.68 as builder
 
-RUN <<EOF
-    set -e
-
-    apt-get update
-    apt-get install -y build-essential
-
+RUN apt-get update && \
+    apt-get install -y build-essential && \
     rm -rf /var/lib/apt/lists/*
-EOF
 
 WORKDIR /app
 
@@ -27,6 +22,6 @@ FROM debian:bullseye-slim
 
 COPY --from=builder /app/output/bin/ipc-agent /usr/local/bin/ipc-agent
 
-ENTRYPOINT ["ipc-agent"]
+ENTRYPOINT ["ipc-agent", "daemon"]
 
 EXPOSE 3030
